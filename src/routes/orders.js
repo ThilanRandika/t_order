@@ -6,6 +6,7 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3004';
 
 /**
  * @swagger
@@ -109,6 +110,15 @@ router.post(
         shippingAddress: req.body.shippingAddress || {},
         notes: req.body.notes || '',
       });
+
+      // Fire-and-forget notification
+      axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/order-placed`, {
+        orderId: order._id,
+        userEmail: req.user.email,
+        totalAmount,
+        items: resolvedItems,
+        shippingAddress: req.body.shippingAddress || {}
+      }).catch(err => console.error("Notification failed:", err.message));
 
       res.status(201).json({ message: 'Order created successfully', order });
     } catch (err) {
@@ -225,6 +235,14 @@ router.put(
       }
 
       await order.save();
+
+      // Fire-and-forget notification
+      axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/order-status`, {
+        orderId: order._id,
+        userEmail: order.userEmail,
+        status: order.status
+      }).catch(err => console.error("Notification failed:", err.message));
+
       res.json({ message: 'Order status updated', order });
     } catch (err) {
       res.status(500).json({ error: 'Failed to update order status' });
