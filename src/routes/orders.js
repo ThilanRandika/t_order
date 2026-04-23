@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const axios = require('axios');
 const Order = require('../models/Order');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3002';
@@ -151,6 +151,61 @@ router.get('/', authenticate, async (req, res) => {
 
 /**
  * @swagger
+ * /orders/all:
+ *   get:
+ *     summary: Get all system orders (Admin only)
+ *     tags: [Orders]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of all orders
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/all', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Note regarding hydration: 
+    // Mongoose .populate() is native to monolithic databases. 
+    // Since this is a microservice architecture, 'userId' and 'productId' are stored as Strings, 
+    // and the corresponding models exist in completely separate databases.
+    // However, the Order schema design already stores denormalized 'userEmail' and 'productName' 
+    // inline, allowing the frontend admin table to display meaningful names without expensive cross-service calls.
+    const orders = await Order.find({})
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Order.countDocuments();
+
+    res.json({ 
+      orders,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch all orders' });
+  }
+});
+/**
+ * @swagger
  * /orders/{id}:
  *   get:
  *     summary: Get a single order by ID
@@ -249,5 +304,6 @@ router.put(
     }
   }
 );
+
 
 module.exports = router;
