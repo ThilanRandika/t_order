@@ -306,4 +306,56 @@ router.put(
 );
 
 
+/**
+ * @swagger
+ * /orders/user/{userId}/anonymize:
+ *   put:
+ *     summary: Anonymize user orders and cancel pending ones (GDPR/Deactivation)
+ *     tags: [Orders]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Orders anonymized successfully
+ *       403:
+ *         description: Admin access required
+ */
+router.put('/user/:userId/anonymize', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.params.userId });
+    if (orders.length === 0) {
+      return res.json({ message: 'No orders found for this user.' });
+    }
+
+    const updates = [];
+    for (const order of orders) {
+      if (['pending', 'processing'].includes(order.status)) {
+        order.status = 'cancelled';
+      }
+      order.userEmail = 'anonymized@shopease.local';
+      order.notes = '[Account Deactivated]';
+      order.shippingAddress = {
+        street: '[Redacted]',
+        city: '[Redacted]',
+        country: '[Redacted]',
+        postalCode: '[Redacted]',
+      };
+      updates.push(order.save());
+    }
+
+    await Promise.all(updates);
+
+    res.json({ message: `Successfully anonymized and processed ${orders.length} orders.` });
+  } catch (err) {
+    console.error('Anonymization error:', err);
+    res.status(500).json({ error: 'Failed to anonymize user orders' });
+  }
+});
+
 module.exports = router;
